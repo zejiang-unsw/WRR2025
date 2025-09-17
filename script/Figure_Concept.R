@@ -7,7 +7,9 @@ current_path = rstudioapi::getActiveDocumentContext()$path
 setwd(dirname(current_path))
 
 # change the subplots of figure a,b,c, and d into two columns, one column x with high frequency
-mimicing flood, another x with low frequency mimicing drought, then show the phase 
+# mimicing flood, another x with low frequency mimicing drought, then show the phase shift figb,
+# then do the variance transformation figc show the variace distribution with transformed timeseirs
+# last, do the scatter plot figd
 
 # load library ----
 library(WASP2.0)
