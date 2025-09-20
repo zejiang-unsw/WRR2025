@@ -18,6 +18,7 @@ library(tidyr)
 library(doParallel)
 library(foreach)
 library(cowplot)
+library(rgl)
 
 #display.brewer.all(colorblindFriendly = T, type=c("div","qual","seq","all")[2])
 col_len <- 8
@@ -35,12 +36,16 @@ set.seed(2025-07-08)
 ensemble <- 100
 n <- 5000
 
+aux_dir <- file.path("..", "figure", "insets")
+if(!dir.exists(aux_dir)) dir.create(aux_dir, recursive = TRUE)
+
 system_specs <- list(
   Duffing = list(
     label = "Duffing",
     prefix = "Duffing",
     sd_label = "0.1",
     n = n,
+    var_labels = c(x = "x", y = "y"),
     generator = function() {
       ts <- WASP2.0::data.gen.Duffing(nobs = n, s = 0.1, do.plot = FALSE)
       data.frame(No = 1:n, x = ts$x, y = ts$y)
@@ -51,6 +56,7 @@ system_specs <- list(
     prefix = "Rossler",
     sd_label = "0.1",
     n = n,
+    var_labels = c(x = "x1", y = "x2", z = "y"),
     generator = function() {
       ts <- WASP2.0::data.gen.Rossler(a = 0.2, b = 0.2, w = 5.7, start = c(-2, -10, 0.2),
                                       n = n, s = 0.1)
@@ -62,6 +68,7 @@ system_specs <- list(
     prefix = "Lorenz",
     sd_label = "5",
     n = n,
+    var_labels = c(x = "x1", y = "x2", z = "y"),
     generator = function() {
       time <- seq(0, 50, length.out = n)
       ts <- WASP2.0::data.gen.Lorenz(time = time, s = 5)
@@ -81,24 +88,89 @@ for (sys_name in names(system_specs)) {
   ts_wide <- spec$generator()
   ts_long <- ts_wide %>%
     gather(group, value, -No) %>%
-    mutate(system = label)
+    mutate(group = factor(group,
+                          levels = names(spec$var_labels),
+                          labels = spec$var_labels),
+           system = label)
 
-  p_ts <- ggplot(ts_long, aes(x = No, y = value, color = group)) +
-    geom_line(linewidth = 0.5) +
-    scale_color_manual(values = col_qual) +
-    labs(x = NULL, y = NULL, title = label, color = NULL) +
-    egg::theme_article() +
+  x_limit <- if (sys_name == "Duffing") c(0, 100) else c(0, 1000)
+
+  base_theme <- egg::theme_article() +
     theme(text = element_text(size = font_size),
-          plot.margin = unit(c(0.5, 0.1, 0.1, 0.1), "cm"),
+          plot.margin = grid::unit(c(0.35, 0.1, 0.1, 0.05), "cm"),
           plot.background = element_blank(),
           panel.background = element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.text.y = element_blank(),
-          axis.ticks.y = element_blank(),
-          legend.position = "top",
           legend.title = element_blank(),
-          legend.key.width = unit(1, "cm"))
+          legend.key = element_blank(),
+          legend.key.width = grid::unit(0.6, "cm"),
+          axis.title = element_text(size = font_size),
+          axis.text = element_text(size = font_size))
+
+  p_ts_base <- ggplot(ts_long, aes(x = No, y = value, color = group)) +
+    geom_line(linewidth = 0.5) +
+    scale_color_manual(values = col_qual) +
+    scale_x_continuous(limits = x_limit, breaks = scales::pretty_breaks(n = 6)) +
+    labs(x = "Time step", y = NULL, title = NULL, color = NULL) +
+    base_theme +
+    theme(legend.position = c(0.8,0.8))
+
+  if (label == "Lorenz") {
+    p_ts_base <- p_ts_base +
+      scale_y_continuous(limits = c(-30, 80), breaks = scales::pretty_breaks(n = 6))
+  }
+
+  legend_plot <- ggplot(ts_long, aes(x = No, y = value, color = group)) +
+    geom_line(linewidth = 0.5) +
+    scale_color_manual(values = col_qual) +
+    scale_x_continuous(limits = x_limit) +
+    labs(color = NULL) +
+    base_theme +
+    theme(legend.position = "top",
+          legend.justification = "left",
+          legend.box.just = "left",
+          legend.background = element_rect(fill = scales::alpha("white", 0.6), colour = NA),
+          axis.title = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank())
+
+  legend_grob <- cowplot::get_legend(legend_plot)
+
+  if (label == "Duffing") {
+    scatter_df <- ts_wide %>% select(x, y)
+    scatter_plot <- ggplot(scatter_df, aes(x = x, y = y)) +
+      geom_point(alpha = 0.12, size = 0.15, color = col_qual[1]) +
+      coord_equal() +
+      theme_void()
+    ggsave(filename = file.path(aux_dir, paste0(label, "_phase.pdf")),
+           plot = scatter_plot,
+           width = 2.2, height = 2.2, units = "in")
+  } else if (label %in% c("Rossler", "Lorenz")) {
+    scatter_df <- ts_wide %>% select(x, y, z)
+    local({
+      pdf_file <- file.path(aux_dir, paste0(label, "_phase.pdf"))
+      dev_id <- rgl::open3d(useNULL = TRUE)
+      on.exit(rgl::rgl.close(), add = TRUE)
+      rgl::bg3d(color = "white")
+      rgl::par3d(windowRect = c(0, 0, 500, 500))
+      rgl::plot3d(scatter_df$x,
+                  scatter_df$y,
+                  scatter_df$z,
+                  type = "p",
+                  size = 3,
+                  col = scales::alpha(col_qual[2], 0.6),
+                  box = FALSE,
+                  axes = FALSE,
+                  xlab = "",
+                  ylab = "",
+                  zlab = "")
+      rgl::rgl.viewpoint(theta = 40, phi = 20, zoom = 0.8)
+      rgl::rgl.postscript(pdf_file, fmt = "pdf")
+    })
+  }
+
+  p_ts <- cowplot::ggdraw(p_ts_base) +
+    cowplot::draw_grob(legend_grob, x = 0.98, y = 0.98, width = 0.32,
+                       height = 0.22, hjust = 1, vjust = 1)
 
   time_series_plots[[label]] <- p_ts
 
@@ -110,7 +182,7 @@ for (sys_name in names(system_specs)) {
   load(file_dat)
 
   pred_dt <- pred_df_list %>%
-    gather(model, pred, which(colnames(pred_df_list) %in% paste0("mod", 1:3))) %>%
+    gather(model, pred, mod1, mod3) %>%
     mutate(system = label) %>%
     mutate_if(is.character, as.factor) %>%
     data.table()
@@ -125,8 +197,8 @@ for (sys_name in names(system_specs)) {
                             levels = c("cal", "val"),
                             labels = c("Calibration", "Validation"))
   metric_df$model <- factor(as.character(metric_df$model),
-                            levels = paste0("mod", 1:3),
-                            labels = c("x", "x'", "x'(φ)"))
+                            levels = c("mod1", "mod3"),
+                            labels = c("x", "x'(φ)"))
   metric_df$method <- factor(as.character(metric_df$method))
 
   metric_df1 <- metric_df %>%
@@ -136,17 +208,24 @@ for (sys_name in names(system_specs)) {
 
   metric_subset <- metric_df1 %>%
     filter(system == label, group == "Validation", method == "lm") %>%
-    droplevels()
+    droplevels() %>%
+    group_by(metric) %>%
+    mutate(q_low = quantile(value, 0.05),
+           q_high = quantile(value, 0.95),
+           pad = (q_high - q_low) * 0.25 + 1e-6,
+           plot_value = pmin(pmax(value, q_low - pad), q_high + pad)) %>%
+    ungroup()
 
-  p_metric <- ggplot(metric_subset, aes(x = model, y = value, fill = model)) +
-    geom_boxplot(linewidth = 0.3, outlier.size = 0.8) +
+  p_metric <- ggplot(metric_subset, aes(x = model, y = plot_value, fill = model)) +
+    geom_violin(trim = FALSE, linewidth = 0.3, colour = NA) +
+    stat_summary(fun = median, geom = "point", shape = 21, size = 1.3, fill = "white") +
     facet_wrap(metric ~ ., scales = "free") +
-    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 6)) +
     scale_fill_manual(values = col_qual) +
-    labs(x = NULL, y = NULL, title = label) +
+    labs(x = NULL, y = NULL, title = NULL) +
     egg::theme_article() +
     theme(text = element_text(family = "sans", face = "bold", size = font_size),
-          plot.margin = unit(c(0.5, 0.1, 0.1, 0.1), "cm"),
+          plot.margin = grid::unit(c(0.35, 0.1, 0.1, 0.5), "cm"),
           plot.background = element_blank(),
           panel.background = element_blank(),
           strip.background.x = element_rect(fill = "#DEDEDE", colour = "black"),
@@ -162,7 +241,13 @@ for (sys_name in names(system_specs)) {
 }
 
 figure_grobs <- c(time_series_plots[system_levels], metric_plots[system_levels])
-fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol = 3, align = "hv")
+fig <- egg::ggarrange(plots = figure_grobs,
+                      ncol = 3,
+                      labels = letters[seq_along(figure_grobs)],
+                      label.args = list(gp = grid::gpar(fontsize = 10, fontface = "bold"),
+                                        hjust = -0.1,
+                                        vjust = 1.2))
+#fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol=3)
 fig %>% print()
 
 if(flag.save){
