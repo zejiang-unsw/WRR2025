@@ -15,8 +15,11 @@ library(RColorBrewer)
 library(dplyr)
 library(tidyr)
 library(ggpmisc)
+library(FNN)
 
 #display.brewer.all(colorblindFriendly = T, type=c("div","qual","seq","all")[2])
+flag.save <- T
+
 col_len <- 8
 col_qual <- brewer.pal(n = col_len, name = "Dark2")
 col_div <- brewer.pal(n = col_len, name = "RdYlBu")
@@ -26,14 +29,15 @@ font_size <- 10
 
 # synthetic data ----
 set.seed(101)
-n <- nobs <- 512/2
-sd.y <- sd.x <- 0
+n <- nobs <- 300
+sd.y <- sd.x <- 0.1
 fs <- 1 / nobs
 t <- seq(0, 1, length.out = nobs)
 phi1 <- pi / 2
 
-freq_x <- 12 # common predictor frequency
-x_common <- sin(2 * pi * freq_x * t + phi1) + rnorm(nobs, 0, sd.x)
+freq_x <- 15 # common predictor frequency
+noise <- rnorm(nobs, 0, sd.x)
+x_common <- sin(2 * pi * freq_x * t + phi1) #+ noise
 
 wf <- "d6"
 
@@ -42,15 +46,16 @@ l2_norm <- function(x) {
 }
 
 build_case <- function(freq_y) {
-  y <- sin(2 * pi * freq_y * t)
+  J <- 3
+  y <- sin(2 * pi * freq_y * t) #+ rnorm(nobs, 0, sd.y)
   data <- list(x = y, dp = as.matrix(x_common))
   dp.n <- phase.wasp.index(data$dp, data$x, index = 1:n, k = n/2-1)
 
-  dwt0 <- WASP2.0::dwt.vt(list(x = y, dp = y), wf, verbose = FALSE)
-  dwt <- WASP2.0::dwt.vt(data, wf, verbose = FALSE)
-  dwt1 <- WASP2.0::dwt.wasp.val(data, wf, phase = TRUE, index_c = 1:n, 
-                                k = n/2-1, max_iter = 3, 
-                                #k_auto = TRUE, power_thresh = 0.8, k_max = n/2-1,
+  dwt0 <- WASP2.0::dwt.vt(list(x = y, dp = y), wf, J=J, verbose = FALSE)
+  dwt <- WASP2.0::dwt.vt(data, wf, J=J, verbose = FALSE)
+  dwt1 <- WASP2.0::dwt.wasp.val(data, wf, J=J, phase = TRUE, index_c = 1:n, 
+                                #k = n/2-1, max_iter = 3, 
+                                k_auto = TRUE, power_thresh = 0.8, k_max = 10,
                                 #momentum = 0.3,
                                 verbose = FALSE)
 
@@ -63,8 +68,8 @@ build_case <- function(freq_y) {
   )
 }
 
-freq_high <- 24
-freq_low <- 6
+freq_high <- 25
+freq_low <- 5
 
 case_high <- build_case(freq_high)
 case_low <- build_case(freq_low)
@@ -97,8 +102,8 @@ cov_theme <- theme(text = element_text(size = font_size),
 scatter_theme <- theme(text = element_text(size = font_size),
                        plot.margin = unit(c(-0.5, 0.2, 0, 0.2), "cm"),
                        panel.grid = element_blank(),
-                       panel.border = element_blank(),
-                       panel.background = element_blank(),
+                       #panel.border = element_blank(),
+                       #panel.background = element_blank(),
                        plot.background = element_blank(),
                        axis.text = element_blank(),
                        axis.ticks = element_blank(),
@@ -112,13 +117,13 @@ df_x_common <- tibble::tibble(No = 1:n, value = x_common)
 p1a_y_high <- ggplot(df_y_high, aes(No, value)) +
   geom_line(color = "black", linewidth = 0.6) +
   scale_x_continuous(limits = c(0, 100)) +
-  labs(title = "High-frequency y (Flood)") +
+  labs(title = "High-frequency y") +
   line_theme()
 
 p1a_y_low <- ggplot(df_y_low, aes(No, value)) +
   geom_line(color = "black", linewidth = 0.6) +
   scale_x_continuous(limits = c(0, 100)) +
-  labs(title = "Low-frequency y (Drought)") +
+  labs(title = "Low-frequency y") +
   line_theme()
 
 p1a_x <- ggplot(df_x_common, aes(No, value)) +
@@ -211,26 +216,30 @@ p1c_cov_high <- ggplot(df_cov_high, aes(No, S, fill = Series)) +
   geom_col(position = "dodge") +
   geom_line(aes(No, S0), color = "black", linewidth = 0.6) +
   geom_point(aes(No, S0), color = "black", size = 1.5) +
-  scale_fill_manual(values = col_qual[c(1, 3)]) +
+  scale_fill_manual(values = col_qual[c(2, 3)]) +
   labs(title = "Variance-modulated x") +
+  scale_y_continuous(limits = c(-1, 1)) +
   cov_theme
 
 p1c_cov_low <- ggplot(df_cov_low, aes(No, S, fill = Series)) +
   geom_col(position = "dodge") +
   geom_line(aes(No, S0), color = "black", linewidth = 0.6) +
   geom_point(aes(No, S0), color = "black", size = 1.5) +
-  scale_fill_manual(values = col_qual[c(1, 3)]) +
+  scale_fill_manual(values = col_qual[c(2, 3)]) +
   labs(title = "Variance-modulated x") +
+  scale_y_continuous(limits = c(-0.1, 1.1)) +
   cov_theme
 
+case_high$dwt1$x <- case_high$dwt1$x + rnorm(nobs, 0, sd.y)
 df_x_trans_high <- tibble::tibble(No = 1:n,
                                   x_raw = case_high$dwt$dp[, 1],
-                                  x_trans = case_high$dwt1$dp.n[, 1]) %>%
+                                  x_trans = case_high$dwt1$x) %>%
   tidyr::pivot_longer(cols = c("x_raw", "x_trans"), names_to = "Series", values_to = "value")
 
+case_low$dwt1$x <- case_low$dwt1$x + rnorm(nobs, 0, sd.y)
 df_x_trans_low <- tibble::tibble(No = 1:n,
                                  x_raw = case_low$dwt$dp[, 1],
-                                 x_trans = case_low$dwt1$dp.n[, 1]) %>%
+                                 x_trans = case_low$dwt1$x) %>%
   tidyr::pivot_longer(cols = c("x_raw", "x_trans"), names_to = "Series", values_to = "value")
 
 p1c_x_high <- ggplot(df_x_trans_high, aes(No, value, colour = Series, linetype = Series)) +
@@ -238,6 +247,7 @@ p1c_x_high <- ggplot(df_x_trans_high, aes(No, value, colour = Series, linetype =
   scale_colour_manual(values = c(x_raw = col_qual[2], x_trans = col_qual[4])) +
   scale_linetype_manual(values = c(x_raw = "dashed", x_trans = "solid")) +
   scale_x_continuous(limits = c(0, 100)) +
+  scale_y_continuous(limits = c(-1.5, 1.5)) +
   labs(title = "Transformed x") +
   line_theme()
 
@@ -246,7 +256,8 @@ p1c_x_low <- ggplot(df_x_trans_low, aes(No, value, colour = Series, linetype = S
   scale_colour_manual(values = c(x_raw = col_qual[2], x_trans = col_qual[4])) +
   scale_linetype_manual(values = c(x_raw = "dashed", x_trans = "solid")) +
   scale_x_continuous(limits = c(0, 100)) +
-  labs(title = NULL) +
+  scale_y_continuous(limits = c(-1.5, 1.5)) +
+  labs(title = "Transformed x") +
   line_theme()
 
 p1c_high <- cowplot::plot_grid(p1c_cov_high, p1c_x_high, ncol = 1, align = "v")
@@ -259,10 +270,14 @@ figc
 fit_raw_high <- stats::lm(case_high$dwt$x ~ ., data = case_high$dwt$dp[, 1] %>% data.frame())
 fit_trans_high <- stats::lm(case_high$dwt1$x ~ ., data = case_high$dwt1$dp.n[, 1] %>% data.frame())
 
+#fit_raw_high <- FNN::knn.reg(y=case_high$dwt$x, train = case_high$dwt$dp[, 1], k=sqrt(n))
+#fit_trans_high <- FNN::knn.reg(y=case_high$dwt1$x, train = case_high$dwt1$dp.n[, 1], k=sqrt(n))
+
+
 scatter_high <- tibble::tibble(
   obs = case_high$dwt$x,
-  `Raw predictor` = fit_raw_high$fitted.values,
-  `Transformed predictor` = fit_trans_high$fitted.values
+  `Raw predictor` = fit_raw_high$fit,
+  `Transformed predictor` = case_high$dwt1$x
 ) %>%
   tidyr::pivot_longer(cols = c("Raw predictor", "Transformed predictor"),
                       names_to = "Series", values_to = "pred")
@@ -270,29 +285,38 @@ scatter_high <- tibble::tibble(
 fit_raw_low <- stats::lm(case_low$dwt$x ~ ., data = case_low$dwt$dp[, 1] %>% data.frame())
 fit_trans_low <- stats::lm(case_low$dwt1$x ~ ., data = case_low$dwt1$dp.n[, 1] %>% data.frame())
 
+#fit_raw_low <- FNN::knn.reg(y=case_low$dwt$x, train=case_low$dwt$dp[, 1], k=sqrt(n))
+#fit_trans_low <- FNN::knn.reg(y=case_low$dwt1$x, train=case_low$dwt1$dp.n[, 1], k=sqrt(n))
+
 scatter_low <- tibble::tibble(
   obs = case_low$dwt$x,
-  `Raw predictor` = fit_raw_low$fitted.values,
-  `Transformed predictor` = fit_trans_low$fitted.values
+  `Raw predictor` = fit_raw_low$fit,
+  `Transformed predictor` = case_low$dwt1$x
 ) %>%
   tidyr::pivot_longer(cols = c("Raw predictor", "Transformed predictor"),
                       names_to = "Series", values_to = "pred")
 
 plot_scatter <- function(df, title_text = NULL) {
   ggplot(df, aes(pred, obs)) +
-    geom_point(color = col_qual[2], fill = scales::alpha(col_qual[2], 0.4), shape = 21, size = 2) +
+    geom_point(color = col_qual[2], fill = scales::alpha(col_qual[2], 0.4), shape = 21, 
+               size = 1) +
     geom_abline(intercept = 0, slope = 1, color = "grey40") +
     labs(title = title_text, x = "Predicted", y = "Observed") +
-    coord_fixed(xlim = c(-1, 1), ylim = c(-1, 1)) +
+    coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
+    #coord_fixed() +
+    egg::theme_presentation() + 
     scatter_theme
 }
 
 plot_scatter_trans <- function(df, title_text = NULL) {
   ggplot(df, aes(pred, obs)) +
-    geom_point(color = col_qual[4], fill = scales::alpha(col_qual[4], 0.4), shape = 21, size = 2) +
+    geom_point(color = col_qual[4], fill = scales::alpha(col_qual[4], 0.4), shape = 21, 
+               size = 1) +
     geom_abline(intercept = 0, slope = 1, color = "grey40") +
-    labs(title = title_text, x = "Predicted", y = "Observed") +
-    coord_fixed(xlim = c(-1, 1), ylim = c(-1, 1)) +
+    labs(title = title_text, x = "Predicted", y = NULL) +
+    coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
+    #coord_fixed() +
+    egg::theme_presentation() + 
     scatter_theme
 }
 
@@ -316,7 +340,7 @@ figd
 # Final figure ----
 fig <- cowplot::plot_grid(figa, figb,
                           figc, figd,
-                          rel_heights = c(1,0.5,1.2,1),
+                          rel_heights = c(1,0.6,1.5,1),
                           ncol = 1,
                           label_fontfamily = "sans",
                           label_fontface = "bold",
@@ -325,8 +349,8 @@ fig <- cowplot::plot_grid(figa, figb,
 fig %>% print()
 
 # Figure export template ----
-if (FALSE) {
-  filen <- "Figure_concept"
+if (flag.save) {
+  filen <- "Figure_concept.png"
   export::graph2pdf(x = fig, file = filen, aspectr = 2, font = "Arial",
                     height = 16 / 2.54, width = 12 / 2.54, bg = "transparent")
 
