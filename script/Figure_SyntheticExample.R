@@ -6,7 +6,7 @@ graphics.off() # remove all figures
 current_path = rstudioapi::getActiveDocumentContext()$path 
 setwd(dirname(current_path))
 
-flag.save <- F
+flag.save <- T
 
 # load library ----
 library(data.table)
@@ -36,7 +36,7 @@ set.seed(2025-07-08)
 ensemble <- 100
 n <- 5000
 
-aux_dir <- file.path("..", "figure", "insets")
+aux_dir <- file.path(".","insets")
 if(!dir.exists(aux_dir)) dir.create(aux_dir, recursive = TRUE)
 
 system_specs <- list(
@@ -66,12 +66,12 @@ system_specs <- list(
   Lorenz = list(
     label = "Lorenz",
     prefix = "Lorenz",
-    sd_label = "5",
+    sd_label = "1",
     n = n,
     var_labels = c(x = "x1", y = "x2", z = "y"),
     generator = function() {
       time <- seq(0, 50, length.out = n)
-      ts <- WASP2.0::data.gen.Lorenz(time = time, s = 5)
+      ts <- WASP2.0::data.gen.Lorenz(time = time, s = 1)
       data.frame(No = 1:n, x = ts$x, y = ts$y, z = ts$z)
     }
   )
@@ -93,11 +93,11 @@ for (sys_name in names(system_specs)) {
                           labels = spec$var_labels),
            system = label)
 
-  x_limit <- if (sys_name == "Duffing") c(0, 100) else c(0, 1000)
+  x_limit <- if (sys_name == "Duffing") c(0, 100) else c(0, 500)
 
   base_theme <- egg::theme_article() +
     theme(text = element_text(size = font_size),
-          plot.margin = grid::unit(c(0.35, 0.1, 0.1, 0.05), "cm"),
+          plot.margin = grid::unit(c(0.35, 0.1, 0.1, 0.5), "cm"),
           plot.background = element_blank(),
           panel.background = element_blank(),
           legend.title = element_blank(),
@@ -113,7 +113,7 @@ for (sys_name in names(system_specs)) {
     labs(x = "Time step", y = NULL, title = NULL, color = NULL) +
     base_theme +
     theme(legend.position = c(0.8,0.8))
-
+  p_ts_base
   if (label == "Lorenz") {
     p_ts_base <- p_ts_base +
       scale_y_continuous(limits = c(-30, 80), breaks = scales::pretty_breaks(n = 6))
@@ -136,36 +136,46 @@ for (sys_name in names(system_specs)) {
   legend_grob <- cowplot::get_legend(legend_plot)
 
   if (label == "Duffing") {
+    ts <- WASP2.0::data.gen.Duffing(nobs = n, s=0, do.plot=F)
+    ts_wide <- data.frame(No = 1:n, x = ts$x, y = ts$y)
     scatter_df <- ts_wide %>% select(x, y)
     scatter_plot <- ggplot(scatter_df, aes(x = x, y = y)) +
-      geom_point(alpha = 0.12, size = 0.15, color = col_qual[1]) +
+      geom_point(alpha = 1, size = 0.5, color = "black") +
       coord_equal() +
       theme_void()
-    ggsave(filename = file.path(aux_dir, paste0(label, "_phase.pdf")),
-           plot = scatter_plot,
-           width = 2.2, height = 2.2, units = "in")
+    export::graph2pdf(x = scatter_plot,
+                      file = file.path(aux_dir, paste0(label, "_phase.pdf")),
+                      aspectr = 2,
+                      font = "Arial",
+                      height = 4 / 2.54,
+                      width = 4 / 2.54,
+                      bg = "transparent")
   } else if (label %in% c("Rossler", "Lorenz")) {
-    scatter_df <- ts_wide %>% select(x, y, z)
-    local({
-      pdf_file <- file.path(aux_dir, paste0(label, "_phase.pdf"))
-      dev_id <- rgl::open3d(useNULL = TRUE)
-      on.exit(rgl::rgl.close(), add = TRUE)
-      rgl::bg3d(color = "white")
-      rgl::par3d(windowRect = c(0, 0, 500, 500))
-      rgl::plot3d(scatter_df$x,
-                  scatter_df$y,
-                  scatter_df$z,
-                  type = "p",
-                  size = 3,
-                  col = scales::alpha(col_qual[2], 0.6),
-                  box = FALSE,
-                  axes = FALSE,
-                  xlab = "",
-                  ylab = "",
-                  zlab = "")
-      rgl::rgl.viewpoint(theta = 40, phi = 20, zoom = 0.8)
-      rgl::rgl.postscript(pdf_file, fmt = "pdf")
-    })
+    if(label=="Rossler"){
+      scatter_df <- WASP2.0::data.gen.Rossler(a = 0.2, b = 0.2, w = 5.7, 
+                                        start = c(-2, -10, 0.2), n, s=0)
+    } else {
+      scatter_df <- WASP2.0::data.gen.Lorenz(sigma = 10, beta = 8/3, rho = 28, start = c(-13, -14, 47),
+                                     time = seq(0, by=0.05, length.out = n), s=0)
+    }
+    
+    pdf_file <- file.path(aux_dir, paste0(label, "_phase.pdf"))
+    rgl::bg3d(color = "transparent")
+    rgl::par3d(windowRect = c(0, 0, 500, 500))
+    fig <- rgl::plot3d(scatter_df$x,
+                scatter_df$y,
+                scatter_df$z,
+                type = "l",
+                size = 3,
+                col = "black", #scales::alpha(col_qual[2], 0.6),
+                box = FALSE,
+                axes = FALSE,
+                xlab = "",
+                ylab = "",
+                zlab = "")
+    fig %>% print()
+    rgl.postscript(pdf_file, fmt="pdf")
+
   }
 
   p_ts <- cowplot::ggdraw(p_ts_base) +
@@ -215,10 +225,10 @@ for (sys_name in names(system_specs)) {
            pad = (q_high - q_low) * 0.25 + 1e-6,
            plot_value = pmin(pmax(value, q_low - pad), q_high + pad)) %>%
     ungroup()
-
+  ## metric ----
   p_metric <- ggplot(metric_subset, aes(x = model, y = plot_value, fill = model)) +
     geom_violin(trim = FALSE, linewidth = 0.3, colour = NA) +
-    stat_summary(fun = median, geom = "point", shape = 21, size = 1.3, fill = "white") +
+    stat_summary(fun = mean, geom = "point", shape = 21, size = 1.3, fill = "red") +
     facet_wrap(metric ~ ., scales = "free") +
     scale_y_continuous(breaks = scales::pretty_breaks(n = 6)) +
     scale_fill_manual(values = col_qual) +
@@ -235,7 +245,7 @@ for (sys_name in names(system_specs)) {
           axis.text = element_text(size = font_size, family = "sans", face = "plain", color = "black"),
           axis.text.x = element_text(size = font_size, family = "sans", face = "bold", color = "black"),
           legend.position = "none")
-
+  p_metric
   metric_plots[[label]] <- p_metric
   rm(pred_df_list)
 }
@@ -247,12 +257,18 @@ fig <- egg::ggarrange(plots = figure_grobs,
                       label.args = list(gp = grid::gpar(fontsize = 10, fontface = "bold"),
                                         hjust = -0.1,
                                         vjust = 1.2))
-#fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol=3)
+fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol=3,
+                          labels = letters[seq_along(figure_grobs)],
+                          label_size = 10)
 fig %>% print()
 
 if(flag.save){
-  filen <- paste0("Figure_SyntheticExample_", wf, "_n", n, "_0813.png")
-  png(filen, height = 14, width = 18, units = "cm", bg = "white", res = 600)
-  fig %>% print()
-  dev.off()
+  filen <- paste0("Figure_SyntheticExample_", wf, "_n", n, ".png")
+  
+  export::graph2pdf(x = fig, file = filen, aspectr = 2, font = "Arial",
+                    height = 12 / 2.54, width = 18 / 2.54, bg = "white")
+  
+  # png(filen, height = 16, width = 18, units = "cm", bg = "white", res = 600)
+  # fig %>% print()
+  # dev.off()
 }
