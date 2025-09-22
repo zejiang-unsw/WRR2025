@@ -31,7 +31,7 @@ col_pair <- brewer.pal(n=col_len+4, name="Paired")
 col_div <- brewer.pal(n=col_len, name="RdYlBu")
 col_seq <- brewer.pal(n=col_len, name="YlOrRd")
 
-col_qual <- viridisLite::viridis(n=4, option = "D")
+#col_qual <- viridisLite::viridis(n=4, option = "D")
 
 #labels_mod <- c("Stationary","Non-Stationary","Non-stationary (WASP)")
 # labels_mod_exp <- c(expression(italic(mu~" ")), expression(italic(mu(x))),
@@ -67,6 +67,10 @@ CI_longname <-c('Niño 3', 'Niño 4', 'Niño 3.4', 'El Niño Modoki Index',
                 'Indian Ocean West Pole Index', 'Indonesian Index', 
                 'Tasman Sea Index', 'Tropical Trans-basin Variability Index')
 
+CI_levels_plot <- c('Nino3', 'Nino4', 'Nino3.4', 'EMI', 'DMI','EPI', 'WPI', 'II', 'TSI', 'TBV')
+CI_labels_plot <- CI_longname[match(CI_levels_plot, CI_names)]
+CI_levels_plot_rev <- rev(CI_levels_plot)
+
 model_levels_keep <- c("Mod3", "Mod1")
 
 create_case_plot <- function(flag.var, panel_label) {
@@ -92,9 +96,11 @@ create_case_plot <- function(flag.var, panel_label) {
   RPSS_df_all1 <- RPSS_df_all %>% spread(Model, RPSS) %>% 
     mutate(Mod1=(Mod1-Mod0)/(1-Mod0)) %>% 
     mutate(Mod2=(Mod2-Mod0)/(1-Mod0)) %>% 
-    mutate(Mod3=(Mod3-Mod0)/(1-Mod0)) %>% dplyr::select(!Mod0)
+    mutate(Mod3=(Mod3-Mod0)/(1-Mod0)) %>%
+    dplyr::select(!Mod0) %>%
+    dplyr::filter(CI %in% CI_levels_plot)
   
-  RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_names)
+  RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_levels_plot)
   
   # average across two folds
   RPSS_df <- RPSS_df_all1 %>% dplyr::group_by(CI, Lead, Station) %>% 
@@ -112,13 +118,14 @@ create_case_plot <- function(flag.var, panel_label) {
   
   ## fig-box ----
   RPSS_df_all1 <- RPSS_df %>% gather(Model, RPSS, 4:6) %>% 
-    dplyr::filter(Model %in% model_levels_keep) %>%
-    subset(RPSS > 0)
+    dplyr::filter(Model %in% model_levels_keep,
+                  CI %in% CI_levels_plot,
+                  RPSS > 0)
   #RPSS_df_all1 <- RPSS_df_all %>% subset(RPSS > 0)
   #RPSS_df_all1 <- RPSS_df_all 
   summary(RPSS_df_all1)
   
-  RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_names)
+  RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_levels_plot)
   RPSS_df_all1$Model <- factor(RPSS_df_all1$Model, levels=model_levels_keep)
   RPSS_df_all1$Lead <- factor(RPSS_df_all1$Lead, labels = paste0("Lead ",0:2))
   
@@ -130,6 +137,7 @@ create_case_plot <- function(flag.var, panel_label) {
   
   # Step 1: summarise your data
   RPSS_summary <- RPSS_df_all1 %>%
+    dplyr::filter(!is.na(CI)) %>%
     group_by(CI, Model, Lead) %>%
     summarise(
       mean_RPSS = mean(RPSS, na.rm = TRUE),
@@ -140,38 +148,74 @@ create_case_plot <- function(flag.var, panel_label) {
       ymin = mean_RPSS - sd_RPSS,
       ymax = mean_RPSS + sd_RPSS
     )
-  summary(RPSS_summary)
+  summary(RPSS_summary) %>% print()
   
   # Step 2: plot
-  ggplot(data = RPSS_summary, aes(x = CI, y = mean_RPSS, color = Model)) +
-    geom_point(position = position_dodge(width = 0.7), size = 2, shape = 18) +
-    geom_errorbar(aes(ymin = ymin, ymax = ymax),
-                  width = 0,
-                  position = position_dodge(width = 0.7)) +
+  RPSS_summary <- RPSS_summary %>%
+    mutate(CI = factor(CI, levels = CI_levels_plot)) %>% 
+    mutate(Model = factor(Model, levels = c("Mod3", "Mod1")))
+
+  axis_position <- ifelse(flag.var == "wet", "right", "left")
+  dodge_width <- 0.2
+  pd <- position_dodge2(width = dodge_width, padding = 0.15, preserve = "single")
+  
+  if(flag.var=="wet"){
+    scale_case <- scale_x_reverse(
+      #limits = c(-0.1, 0.45),
+      limits = c(0.4, -0.),
+      breaks = scales::pretty_breaks(n = 6),
+      expand = c(0.05, 0)
+    ) 
+  } else {
+    scale_case <- scale_x_continuous(
+      limits = c(-0., 0.4),
+      breaks = scales::pretty_breaks(n = 6),
+      expand = c(0.05, 0)
+    ) 
+  }
+  
+  color_val = c("Mod3" = col_pair[2], "Mod1" = alpha(col_pair[1],0.7))
+  plot_case <- ggplot() +
+    geom_errorbar(data = RPSS_summary %>% subset(Model=="Mod3"),
+                  aes(x = mean_RPSS, y = CI, xmin = mean_RPSS, xmax = ymax),
+                  width = 0.6) +
+    geom_col(data = RPSS_summary %>% subset(Model=="Mod3"),
+             aes(x = mean_RPSS, y = CI, color = Model, 
+                 fill = Model),width=0.8) +
+    geom_col(data = RPSS_summary %>% subset(Model=="Mod1"),
+             aes(x = mean_RPSS, y = CI, color = Model, 
+                 fill = Model),width=0.5) +
+    # geom_point(data = RPSS_summary, aes(y = CI, x = ymax, fill = Model),
+    #            #position = pd,
+    #            pch = 23,
+    #            size = 2.1,
+    #            stroke = 0.3) +
+    geom_vline(xintercept = 0, color = "black", lwd = 0.5) +
     
-    geom_hline(yintercept = 0, color = "black", linetype = "longdash", lwd = 0.2) +
-    
+    scale_fill_manual(
+      values = color_val,
+      labels = c(expression(mu("x'(φ)")), expression(mu(x)))
+    ) + 
     scale_color_manual(
-      values = c("Mod3" = col_qual[4], "Mod1" = col_qual[2]),
-      breaks = model_levels_keep,
+      values = color_val,
       labels = c(expression(mu("x'(φ)")), expression(mu(x)))
     ) +
     
-    facet_wrap(.~Lead, ncol = 3, scales = "fixed") +
-    coord_flip() +
-    scale_x_discrete(labels = CI_longname) +
-    scale_y_continuous(
-      limits = c(-0.1, 0.45),
-      breaks = scales::pretty_breaks(n = 6),
-      expand = c(0.05, 0)
+    facet_wrap(.~Lead, ncol = 1, scales = "fixed") +
+    scale_y_discrete(
+      limits = CI_levels_plot_rev,
+      labels = rev(CI_labels_plot),
+      position = axis_position
     ) +
+    scale_case + 
     labs(
-      x = NULL,
-      y = "Continuous Ranked Probability Skill Score (CRPSS)",
-      color = "GEV model",
+      x = "Continuous Ranked Probability Skill Score (CRPSS)",
+      y = NULL,
+      color = NULL, fill=NULL,
       title = panel_label
     ) +
-    guides(color = guide_legend(reverse = TRUE)) +
+   guides(color = guide_legend(reverse = TRUE),
+          fill = guide_legend(reverse = TRUE)) +
     
     egg::theme_article() +
     theme(
@@ -181,23 +225,43 @@ create_case_plot <- function(flag.var, panel_label) {
       strip.background = element_rect(fill = "#DDDDDD", colour = "grey4"),
       strip.placement = "outside",
       strip.text.x = element_text(size = 7, family = "sans", face = 'bold'),
-      axis.text = element_text(size = 7, family = "sans", face = "plain", color = "black"),
-      axis.title = element_text(size = 7, family = "sans", face = "plain"),
+      axis.text.x = element_text(size = 7, family = "sans", face = "plain", color = "black"),
+      axis.text.y = element_text(size = 7, family = "sans", face = "plain", color = "black", hjust=0.5,
+                                 margin = margin(r = 20)),
+      #axis.text.y.right = element_text(size = 7, family = "sans", face = "plain", color = "black",hjust=0.5),
+      axis.text.y.right = element_blank(),
       axis.title.x = element_text(margin = margin(t = 5)),
       axis.ticks.length  = unit(0.1, "cm"),
       axis.ticks = element_line(linewidth = 0.2),
-      legend.position = c(-0.2, 0.15),
+      legend.position = c(1.5, -0.02),
       legend.title = element_text(hjust = 0.8),
-      legend.direction = "vertical",
+      legend.direction = "horizontal",
       legend.background = element_rect(fill = "transparent"),
       legend.key.spacing.x = unit(0.1, "cm"),
       legend.key.width = unit(0.8, "cm"),
       legend.text = element_text(size = 7, margin = margin(r = 1))
     )
+
+  if(flag.var == "wet"){
+    plot_case <- plot_case +
+      theme(
+        axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank(),
+        axis.title.y = element_blank()
+      )
+  } else {
+    plot_case <- plot_case +
+      theme(
+        axis.text.y.right = element_blank(),
+        axis.ticks.y.right = element_blank()
+      )
+  }
+
+  plot_case
 }
 
-p_wet <- create_case_plot("wet", "a) Wet case")
-p_dry <- create_case_plot("dry", "b) Dry case") +
+p_wet <- create_case_plot("wet", "a) SSI 7-day maximum")
+p_dry <- create_case_plot("dry", "b) SSI 30-day minimum") +
   theme(legend.position = "none")
 
 fig <- egg::ggarrange(p_wet, p_dry, ncol = 2)
@@ -207,10 +271,10 @@ fig %>% print()
 
 ### Figure 3 ----
 if(flag.save){
-  filen <- paste0("Figure3_CRPSS_ALL_",mode,"_",wf,"_",method_fevd,flag.v,"_AU_SSI_wet_dry.png")
+  filen <- paste0("Figure_CRPSS_ALL_",mode,"_",wf,"_",method_fevd,flag.v,"_AU_SSI_wet_dry.png")
   
   export::graph2pdf(x = fig, file = filen, aspectr = 2, font = "Arial",
-                    height = 12 / 2.54, width = 18 / 2.54, bg = "white")
+                    height = 18 / 2.54, width = 18 / 2.54, bg = "white")
   
   png(filen, height=10,width=16,units="cm", bg = "white", res=600)
   grid::grid.newpage()
