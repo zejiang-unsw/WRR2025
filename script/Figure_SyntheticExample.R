@@ -251,12 +251,12 @@ for (sys_name in names(system_specs)) {
 }
 
 figure_grobs <- c(time_series_plots[system_levels], metric_plots[system_levels])
-fig <- egg::ggarrange(plots = figure_grobs,
-                      ncol = 3,
-                      labels = letters[seq_along(figure_grobs)],
-                      label.args = list(gp = grid::gpar(fontsize = 10, fontface = "bold"),
-                                        hjust = -0.1,
-                                        vjust = 1.2))
+# fig <- egg::ggarrange(plots = figure_grobs,
+#                       ncol = 3,
+#                       labels = letters[seq_along(figure_grobs)],
+#                       label.args = list(gp = grid::gpar(fontsize = 10, fontface = "bold"),
+#                                         hjust = -0.1,
+#                                         vjust = 1.2))
 fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol=3,
                           labels = letters[seq_along(figure_grobs)],
                           label_size = 10)
