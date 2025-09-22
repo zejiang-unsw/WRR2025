@@ -66,7 +66,7 @@ system_specs <- list(
   Lorenz = list(
     label = "Lorenz",
     prefix = "Lorenz",
-    sd_label = "1",
+    sd_label = "5",
     n = n,
     var_labels = c(x = "x1", y = "x2", z = "y"),
     generator = function() {
@@ -102,6 +102,7 @@ for (sys_name in names(system_specs)) {
           panel.background = element_blank(),
           legend.title = element_blank(),
           legend.key = element_blank(),
+          legend.text = element_text(size=8, family = "sans", face="bold"),
           legend.key.width = grid::unit(0.6, "cm"),
           axis.title = element_text(size = font_size),
           axis.text = element_text(size = font_size))
@@ -113,6 +114,7 @@ for (sys_name in names(system_specs)) {
     labs(x = "Time step", y = NULL, title = NULL, color = NULL) +
     base_theme +
     theme(legend.position = c(0.8,0.8))
+  
   p_ts_base
   if (label == "Lorenz") {
     p_ts_base <- p_ts_base +
@@ -147,8 +149,8 @@ for (sys_name in names(system_specs)) {
                       file = file.path(aux_dir, paste0(label, "_phase.pdf")),
                       aspectr = 2,
                       font = "Arial",
-                      height = 4 / 2.54,
-                      width = 4 / 2.54,
+                      height = 8 / 2.54,
+                      width = 8 / 2.54,
                       bg = "transparent")
   } else if (label %in% c("Rossler", "Lorenz")) {
     if(label=="Rossler"){
@@ -259,6 +261,7 @@ figure_grobs <- c(time_series_plots[system_levels], metric_plots[system_levels])
 #                                         vjust = 1.2))
 fig <- cowplot::plot_grid(plotlist = figure_grobs, ncol=3,
                           labels = letters[seq_along(figure_grobs)],
+                          hjust=-1,
                           label_size = 10)
 fig %>% print()
 

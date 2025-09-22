@@ -63,3 +63,5 @@ script/.Rhistory
 script/.Rapp.history
 script/.RData
 script/.Ruserdata
+script/*.pdf
+script/insets/*
