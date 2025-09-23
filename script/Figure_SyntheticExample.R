@@ -6,7 +6,7 @@ graphics.off() # remove all figures
 current_path = rstudioapi::getActiveDocumentContext()$path 
 setwd(dirname(current_path))
 
-flag.save <- T
+flag.save <- F
 
 # load library ----
 library(data.table)
@@ -137,14 +137,16 @@ for (sys_name in names(system_specs)) {
 
   legend_grob <- cowplot::get_legend(legend_plot)
 
+  # ts plot ----
   if (label == "Duffing") {
-    ts <- WASP2.0::data.gen.Duffing(nobs = n, s=0, do.plot=F)
+    ts <- WASP2.0::data.gen.Duffing(nobs = n*10, s=0, do.plot=F)
     ts_wide <- data.frame(No = 1:n, x = ts$x, y = ts$y)
     scatter_df <- ts_wide %>% select(x, y)
     scatter_plot <- ggplot(scatter_df, aes(x = x, y = y)) +
       geom_point(alpha = 1, size = 0.5, color = "black") +
       coord_equal() +
       theme_void()
+    scatter_plot
     export::graph2pdf(x = scatter_plot,
                       file = file.path(aux_dir, paste0(label, "_phase.pdf")),
                       aspectr = 2,
@@ -158,7 +160,7 @@ for (sys_name in names(system_specs)) {
                                         start = c(-2, -10, 0.2), n, s=0)
     } else {
       scatter_df <- WASP2.0::data.gen.Lorenz(sigma = 10, beta = 8/3, rho = 28, start = c(-13, -14, 47),
-                                     time = seq(0, by=0.05, length.out = n), s=0)
+                                     time = seq(0, by=0.05, length.out = 1000), s=0)
     }
     
     pdf_file <- file.path(aux_dir, paste0(label, "_phase.pdf"))
