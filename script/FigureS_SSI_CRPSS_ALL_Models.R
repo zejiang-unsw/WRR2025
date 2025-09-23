@@ -21,7 +21,7 @@ library(RColorBrewer)
 
 library(scoringRules)
 
-flag.save <- F
+flag.save.supp <- F
 
 # Global parameters----
 #display.brewer.all(colorblindFriendly = T, type=c("div","qual","seq","all")[2])
@@ -30,8 +30,6 @@ col_qual <- brewer.pal(n=col_len, name="Dark2")
 col_pair <- brewer.pal(n=col_len+4, name="Paired")
 col_div <- brewer.pal(n=col_len, name="RdYlBu")
 col_seq <- brewer.pal(n=col_len, name="YlOrRd")
-
-#col_qual <- viridisLite::viridis(n=4, option = "D")
 
 #labels_mod <- c("Stationary","Non-Stationary","Non-stationary (WASP)")
 # labels_mod_exp <- c(expression(italic(mu~" ")), expression(italic(mu(x))),
@@ -71,9 +69,9 @@ CI_levels_plot <- c('Nino3', 'Nino4', 'Nino3.4', 'EMI', 'DMI','EPI', 'WPI', 'II'
 CI_labels_plot <- CI_longname[match(CI_levels_plot, CI_names)]
 CI_levels_plot_rev <- rev(CI_levels_plot)
 
-model_levels_keep <- c("Mod3", "Mod1")
+model_levels_keep_all <- c("Mod3", "Mod2", "Mod1")
 
-create_case_plot <- function(flag.var, panel_label) {
+create_case_plot_all <- function(flag.var, panel_label) {
   if(flag.var=="wet"){
     data("Qmax_SSI_AU_wet")
     Qmax_SSI_AU <- Qmax_SSI_AU_wet
@@ -86,12 +84,10 @@ create_case_plot <- function(flag.var, panel_label) {
   stn_check <- stn_nos
   stn_samp <- sapply(stn_check, function(v) which(v==stn_nos))
   
-  # Fit GEV-------------------------------------------------
   file_save <- paste0("../result/SSI_CRPSS_",mode,"_",wf,"_Location_",
                       method_fevd,flag.v,"_ALL_AU_",flag.var,".Rdata")
   load(file_save)
   
-  ## RPSS ----
   summary(RPSS_df_all)
   RPSS_df_all1 <- RPSS_df_all %>% spread(Model, RPSS) %>% 
     mutate(Mod1=(Mod1-Mod0)/(1-Mod0)) %>% 
@@ -102,7 +98,6 @@ create_case_plot <- function(flag.var, panel_label) {
   
   RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_levels_plot)
   
-  # average across two folds
   RPSS_df <- RPSS_df_all1 %>% dplyr::group_by(CI, Lead, Station) %>% 
     summarise(Mod1=mean(Mod1), Mod2=mean(Mod2), Mod3=mean(Mod3))
   summary(RPSS_df)
@@ -112,30 +107,21 @@ create_case_plot <- function(flag.var, panel_label) {
   RPSS_pct <- RPSS_dt[,.(Mod1=sum(Mod1>0, na.rm=T)/tol_no,
                          Mod2=sum(Mod2>0, na.rm=T)/tol_no,
                          Mod3=sum(Mod3>0, na.rm=T)/tol_no), by=c("Lead","CI")]
-  
-  ## percentage of improvements ----
   RPSS_pct %>% print()
   
-  ## fig-box ----
   RPSS_df_all1 <- RPSS_df %>% gather(Model, RPSS, 4:6) %>% 
-    dplyr::filter(Model %in% model_levels_keep,
+    dplyr::filter(Model %in% model_levels_keep_all,
                   CI %in% CI_levels_plot,
                   RPSS > 0)
-  #RPSS_df_all1 <- RPSS_df_all %>% subset(RPSS > 0)
-  #RPSS_df_all1 <- RPSS_df_all 
   summary(RPSS_df_all1)
   
   RPSS_df_all1$CI <- factor(RPSS_df_all1$CI, levels=CI_levels_plot)
-  RPSS_df_all1$Model <- factor(RPSS_df_all1$Model, levels=model_levels_keep)
+  RPSS_df_all1$Model <- factor(RPSS_df_all1$Model, levels=model_levels_keep_all)
   RPSS_df_all1$Lead <- factor(RPSS_df_all1$Lead, labels = paste0("Lead ",0:2))
   
   RPSS_df_mu <- RPSS_df_all1 %>% group_by(Lead, Model) %>% summarise(mu=mean(RPSS))
-  
-  ## absolute improvements ----
-  #RPSS_df_mu %>% spread(Model, mu) %>% mutate(Dif=Mod2-Mod1) %>% print()
   RPSS_df_mu %>% spread(Model, mu) %>% print()
   
-  # Step 1: summarise your data
   RPSS_summary <- RPSS_df_all1 %>%
     dplyr::filter(!is.na(CI)) %>%
     group_by(CI, Model, Lead) %>%
@@ -150,18 +136,14 @@ create_case_plot <- function(flag.var, panel_label) {
     )
   summary(RPSS_summary) %>% print()
   
-  # Step 2: plot
   RPSS_summary <- RPSS_summary %>%
     mutate(CI = factor(CI, levels = CI_levels_plot)) %>% 
-    mutate(Model = factor(Model, levels = c("Mod3", "Mod1")))
-
+    mutate(Model = factor(Model, levels = c("Mod3", "Mod2", "Mod1")))
+  
   axis_position <- ifelse(flag.var == "wet", "right", "left")
-  dodge_width <- 0.2
-  pd <- position_dodge2(width = dodge_width, padding = 0.15, preserve = "single")
   
   if(flag.var=="wet"){
     scale_case <- scale_x_reverse(
-      #limits = c(-0.1, 0.45),
       limits = c(0.4, -0.),
       breaks = scales::pretty_breaks(n = 6),
       expand = c(0.05, 0)
@@ -174,7 +156,7 @@ create_case_plot <- function(flag.var, panel_label) {
     ) 
   }
   
-  color_val = c("Mod3" = col_pair[2], "Mod1" = alpha(col_pair[1],0.7))
+  color_val = c("Mod3" = col_pair[2], "Mod2" = col_pair[4], "Mod1" = alpha(col_pair[1],0.7))
   plot_case <- ggplot() +
     geom_errorbar(data = RPSS_summary %>% subset(Model=="Mod3"),
                   aes(x = mean_RPSS, y = CI, xmin = mean_RPSS, xmax = ymax),
@@ -182,23 +164,21 @@ create_case_plot <- function(flag.var, panel_label) {
     geom_col(data = RPSS_summary %>% subset(Model=="Mod3"),
              aes(x = mean_RPSS, y = CI, color = Model, 
                  fill = Model),width=0.8) +
+    geom_col(data = RPSS_summary %>% subset(Model=="Mod2"),
+             aes(x = mean_RPSS, y = CI, color = Model, 
+                 fill = Model),width=0.65) +
     geom_col(data = RPSS_summary %>% subset(Model=="Mod1"),
              aes(x = mean_RPSS, y = CI, color = Model, 
                  fill = Model),width=0.5) +
-    # geom_point(data = RPSS_summary, aes(y = CI, x = ymax, fill = Model),
-    #            #position = pd,
-    #            pch = 23,
-    #            size = 2.1,
-    #            stroke = 0.3) +
     geom_vline(xintercept = 0, color = "black", lwd = 0.5) +
     
     scale_fill_manual(
       values = color_val,
-      labels = c(expression(mu("x'(φ)")), expression(mu(x)))
+      labels = c(expression(mu("x'(φ)")), expression(mu("x'")), expression(mu(x)))
     ) + 
     scale_color_manual(
       values = color_val,
-      labels = c(expression(mu("x'(φ)")), expression(mu(x)))
+      labels = c(expression(mu("x'(φ)")), expression(mu("x'")), expression(mu(x)))
     ) +
     
     facet_wrap(.~Lead, ncol = 1, scales = "fixed") +
@@ -228,7 +208,6 @@ create_case_plot <- function(flag.var, panel_label) {
       axis.text.x = element_text(size = 7, family = "sans", face = "plain", color = "black"),
       axis.text.y = element_text(size = 7, family = "sans", face = "plain", color = "black", hjust=0.5,
                                  margin = margin(r = 20)),
-      #axis.text.y.right = element_text(size = 7, family = "sans", face = "plain", color = "black",hjust=0.5),
       axis.text.y.right = element_blank(),
       axis.title.x = element_text(margin = margin(t = 5)),
       axis.ticks.length  = unit(0.1, "cm"),
@@ -241,7 +220,7 @@ create_case_plot <- function(flag.var, panel_label) {
       legend.key.width = unit(0.8, "cm"),
       legend.text = element_text(size = 7, margin = margin(r = 1))
     )
-
+  
   if(flag.var == "wet"){
     plot_case <- plot_case +
       theme(
@@ -256,28 +235,23 @@ create_case_plot <- function(flag.var, panel_label) {
         axis.ticks.y.right = element_blank()
       )
   }
-
+  
   plot_case
 }
 
-
-p_wet <- create_case_plot("wet", "a) SSI 7-day maximum")
-p_dry <- create_case_plot("dry", "b) SSI 30-day minimum") +
+# Supplementary Figure S: All models
+p_wet_all <- create_case_plot_all("wet", "a) SSI 7-day maximum")
+p_dry_all <- create_case_plot_all("dry", "b) SSI 30-day minimum") +
   theme(legend.position = "none")
 
-fig <- egg::ggarrange(p_wet, p_dry, ncol = 2)
+fig_supp <- egg::ggarrange(p_wet_all, p_dry_all, ncol = 2)
 
-fig %>% print()
+fig_supp %>% print()
 
-### Figure 3 ----
-if(flag.save){
-  filen <- paste0("Figure_CRPSS_ALL_",mode,"_",wf,"_",method_fevd,flag.v,"_AU_SSI_wet_dry.png")
-  
-  export::graph2pdf(x = fig, file = filen, aspectr = 2, font = "Arial",
-                    height = 18 / 2.54, width = 18 / 2.54, bg = "white")
-  
-  png(filen, height=10,width=16,units="cm", bg = "white", res=600)
-  grid::grid.newpage()
-  grid::grid.draw(fig)
+# Supplementary export
+if(flag.save.supp){
+  filen_s <- paste0("../figure/FigureS_CRPSS_ALL_",mode,"_",wf,"_",method_fevd,flag.v,"_AU_SSI_wet_dry_all.png")
+  png(filen_s, height=18,width=18,units="cm", bg = "white", res=600)
+  fig_supp %>% print()
   dev.off()
 }
