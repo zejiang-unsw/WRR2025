@@ -25,7 +25,7 @@ library(RColorBrewer)
 
 library(scoringRules)
 
-flag.save <- F
+flag.save.supp <- T
 
 # Global parameters----
 #display.brewer.all(colorblindFriendly = T, type=c("div","qual","seq","all")[2])
@@ -62,7 +62,8 @@ sig_lev <- 0.05 # likelihood ratio test
 method_fevd <- switch(1, "MLE","GMLE") # !!! reliable parameter estimation is important !!!
 #optim_args <- list(method=c("BFGS", "Nelder-Mead")[1])
 
-target_group <- 2
+
+target_group <- 1
 
 create_condition_plot <- function(flag.var,
                                   panel_letters,
@@ -174,10 +175,10 @@ create_condition_plot <- function(flag.var,
     bar_y_max <- 1
   }
 
-  inset_x <- inset_params$x
-  inset_y <- inset_params$y
-  inset_w <- inset_params$width
-  inset_h <- inset_params$height
+  inset_x <- 0.035
+  inset_y <- 0.055
+  inset_w <- 0.38
+  inset_h <- 0.3
 
   panel_list <- vector("list", length(lead_levels))
   map_list <- vector("list", length(lead_levels))
@@ -208,7 +209,7 @@ create_condition_plot <- function(flag.var,
       scale_fill_manual(values = col_pair[3:6], labels = labels_pct) +
       guides(fill=guide_legend(ncol=2),
              size=guide_legend(ncol=2)) +
-      labs(title = NULL, #panel_titles[i],
+      labs(title = NULL,
            x = NULL, y = NULL,
            fill = "Improve in CRPSS",
            size = "Improve in CRPSS") +
@@ -236,12 +237,13 @@ create_condition_plot <- function(flag.var,
             legend.spacing.x = unit(-1,"pt"),
             legend.box.spacing = unit(1, "pt"))
 
+    bar_data %>% summary() %>% print()
     bar_plot <- ggplot(data = bar_data,
                        aes(x = RPSS_cut, y = pct * 100, fill = RPSS_cut)) +
       geom_col(width = 0.6, color = NA) +
       scale_fill_manual(values = col_pair[3:6], labels = labels_pct, guide = "none") +
       scale_x_discrete(labels = paste0("C", 1:4)) +
-      scale_y_continuous(limits = c(0, 35),
+      scale_y_continuous(limits = c(0, 50),
                          breaks = scales::pretty_breaks(n = 3),
                          expand = c(0, 0)) +
       labs(title = title_text,
@@ -254,7 +256,6 @@ create_condition_plot <- function(flag.var,
             
             plot.title = element_text(size = 6, hjust = 0.4, face = "bold"),
             axis.text.x = element_text(size = 5, family = "sans", color = "black", 
-                                       #margin=margin(t=5), 
                                        angle = 0),
             axis.text.y = element_text(size = 5, family = "sans", color = "black"),
             axis.ticks.length = unit(0.05, "cm"),
@@ -297,12 +298,13 @@ wet_column <- cowplot::plot_grid(plotlist = condition_plots[["wet"]]$panels,
                                  align = "v",
                                  rel_heights = rep(1, length(condition_plots[["wet"]]$panels)))
 
+
 dry_column <- cowplot::plot_grid(plotlist = condition_plots[["dry"]]$panels,
                                   ncol = 1,
                                   align = "v",
                                   rel_heights = rep(1, length(condition_plots[["dry"]]$panels)))
 
-fig4 <- cowplot::plot_grid(wet_column,
+figS_map <- cowplot::plot_grid(wet_column,
                            dry_column,
                            ncol = 2,
                            labels = c("a) SSI 7-day maximum","b) SSI 30-day minimum"),
@@ -311,17 +313,12 @@ fig4 <- cowplot::plot_grid(wet_column,
                            align = "hv",
                            rel_widths = c(1, 1))
 
-fig4 %>% print()
+figS_map %>% print()
 
-if(flag.save){
-  filen <- paste0("Figure_CRPSS_ALL", flag.v, "_AU_SSI.png")
-  dev.size()
-  graph2pdf(x=fig4, file=filen, aspectr=2, font = "Arial", 
-            height = 8.5, width = 6, 
-            #height = 16/2.54, width = 10/2.54, 
-            bg = "white")
-  
-  # png(filen_fig4, height = 18, width = 16, units = "cm", bg = "white", res = 600)
-  # fig4 %>% print()
-  # dev.off()
+if(flag.save.supp){
+  filen_s <- paste0("../figure/FigureS_CRPSS_ALL_", mode, "_", wf, "_", method_fevd, flag.v, 
+                    "_AU_SSI_map_group", target_group, ".png")
+  png(filen_s, height=21.6, width=15, units="cm", bg = "white", res=600)
+  figS_map %>% print()
+  dev.off()
 }
