@@ -25,7 +25,7 @@ library(RColorBrewer)
 
 library(scoringRules)
 
-flag.save.supp <- T
+flag.save.supp <- F
 
 # Global parameters----
 #display.brewer.all(colorblindFriendly = T, type=c("div","qual","seq","all")[2])
@@ -63,7 +63,7 @@ method_fevd <- switch(1, "MLE","GMLE") # !!! reliable parameter estimation is im
 #optim_args <- list(method=c("BFGS", "Nelder-Mead")[1])
 
 
-target_group <- 1
+target_group <- 3
 
 create_condition_plot <- function(flag.var,
                                   panel_letters,
@@ -115,6 +115,7 @@ create_condition_plot <- function(flag.var,
   world <- rnaturalearth::ne_countries(scale = "small", returnclass = "sf")
 
   labels_pct <- c("C1: 0~5%", "C2: 5~10%", "C3: 10~20%", "C4: >20%")
+  rpss_levels <- c("(0,0.05]", "(0.05,0.1]", "(0.1,0.2]", "(0.2,Inf]")
   tol_no <- 219
 
   RPSS_dt_pct1 <- NULL
@@ -141,7 +142,10 @@ create_condition_plot <- function(flag.var,
       merge(loc_stn, by = "Station") %>%
       data.table() %>%
       mutate(flag = 1) %>%
-      mutate(RPSS_cut = cut(RPSS, breaks = c(0, 0.05, 0.1, 0.2, Inf)))
+      mutate(RPSS_cut = factor(cut(RPSS, breaks = c(0, 0.05, 0.1, 0.2, Inf)),
+                               levels = rpss_levels))
+    
+    #RPSS_dt_sub %>% subset(Lead==3) %>% summary() %>% print()
 
     loc_stn_sf <- sf::st_as_sf(x = RPSS_dt_sub,
                                coords = c("LONG_NEW", "LAT_NEW"),
@@ -150,25 +154,40 @@ create_condition_plot <- function(flag.var,
 
     map_sf_by_group[[i_mod]] <- loc_stn_sf
 
-    pct_by_cut <- RPSS_dt_sub[, .(pct = sum(flag)/tol_no), by = .(Lead, RPSS_cut)]
+    # Ensure all Lead x RPSS_cut combinations are present, fill missing with pct=0
+    all_leads <- sort(unique(RPSS_dt_sub$Lead))
+    all_cuts <- rpss_levels
+    all_combos <- expand.grid(Lead = all_leads, RPSS_cut = all_cuts, stringsAsFactors = FALSE)
+    pct_by_cut <- RPSS_dt_sub[, .(pct = sum(flag, na.rm = TRUE)/tol_no), by = .(Lead, RPSS_cut)]
+    pct_by_cut <- merge(all_combos, pct_by_cut, by = c("Lead", "RPSS_cut"), all.x = TRUE)
+    pct_by_cut$pct[is.na(pct_by_cut$pct)] <- 0
     pct_by_cut$Group <- i_mod
+    # Ensure RPSS_cut is a factor with all levels, so C4 is always present in legend
+    pct_by_cut$RPSS_cut <- factor(pct_by_cut$RPSS_cut, levels = all_cuts)
     RPSS_dt_pct1 <- rbind(RPSS_dt_pct1, pct_by_cut)
   }
+  
+  #RPSS_dt_pct1 %>% spread(Lead, pct) %>% print()
+  #RPSS_dt_pct1 %>% summary() %>% print()
+
 
   target_map_sf <- map_sf_by_group[[target_group]]
   target_pct <- RPSS_dt_pct1 %>%
     dplyr::filter(Group == target_group) %>%
     mutate(Lead = as.integer(as.character(Lead)))
+  
 
   lead_levels <- sort(unique(target_map_sf$Lead))
+  lead_labels_all <- paste0("Lead ", seq_along(lead_levels) - 1)
+  lead_labeller <- stats::setNames(lead_labels_all, lead_levels)
   panel_letters <- rep(panel_letters, length.out = length(lead_levels))
   lead_indices <- seq_along(lead_levels) - 1
   panel_titles <- sprintf("%s) Lead %s (%s)", panel_letters, lead_indices, condition_title)
 
+  target_map_sf$RPSS_cut <- factor(target_map_sf$RPSS_cut, levels = rpss_levels)
   target_map_sf$Lead <- factor(target_map_sf$Lead, levels = lead_levels)
   target_pct$Lead <- factor(target_pct$Lead, levels = lead_levels)
-  target_pct$RPSS_cut <- factor(target_pct$RPSS_cut,
-                                levels = levels(target_pct$RPSS_cut))
+  target_pct$RPSS_cut <- factor(target_pct$RPSS_cut, levels = rpss_levels)
 
   bar_y_max <- max(target_pct$pct) * 100
   if(bar_y_max == 0){
@@ -188,10 +207,20 @@ create_condition_plot <- function(flag.var,
     lead_level <- lead_levels[i]
     map_data <- target_map_sf %>% dplyr::filter(Lead == lead_level)
     bar_data <- target_pct %>% dplyr::filter(Lead == lead_level)
-    map_data$Lead <- factor(map_data$Lead, labels=paste0("Lead ", i-1))
+    map_data$RPSS_cut <- factor(map_data$RPSS_cut, levels = rpss_levels)
 
     total_pct <- sum(bar_data$pct) * 100
     title_text <- sprintf("Total Percent: %.1f%%", total_pct)
+
+    #map_data %>% summary() %>% print()
+    ## map ----
+
+    # Ensure all RPSS_cut levels are present in map_data, even if missing
+    all_cuts_map <- factor(levels(target_map_sf$RPSS_cut), levels = levels(target_map_sf$RPSS_cut))
+    if (!all(all_cuts_map %in% levels(map_data$RPSS_cut))) {
+      map_data$RPSS_cut <- factor(map_data$RPSS_cut, levels = levels(target_map_sf$RPSS_cut))
+    }
+    missing_cuts <- setdiff(rpss_levels, as.character(unique(map_data$RPSS_cut)))
 
     map_plot <- ggplot(data = map_data) +
       geom_sf(aes(fill = RPSS_cut, size = RPSS_cut), shape = 21, alpha = 0.8, stroke = 0.1) +
@@ -204,11 +233,27 @@ create_condition_plot <- function(flag.var,
           bottom = "E", top = NA,
           left = "N", right = "N"
         )) +
-      facet_wrap(Lead~.) +
-      scale_size_manual(values = c(0.5, 1, 1.5, 2, 2.5), labels = labels_pct) +
-      scale_fill_manual(values = col_pair[3:6], labels = labels_pct) +
-      guides(fill=guide_legend(ncol=2),
-             size=guide_legend(ncol=2)) +
+      facet_wrap(Lead~., labeller = labeller(Lead = lead_labeller)) +
+      scale_size_manual(
+        values = stats::setNames(c(0.5, 1, 1.5, 2), rpss_levels),
+        labels = labels_pct,
+        drop = FALSE,
+        breaks = rpss_levels,
+        limits = rpss_levels
+      ) +
+      scale_fill_manual(
+        values = stats::setNames(col_pair[3:6], rpss_levels),
+        labels = labels_pct,
+        drop = FALSE,
+        breaks = rpss_levels,
+        limits = rpss_levels
+      ) +
+      guides(fill = guide_legend(ncol = 2,
+                                 drop = FALSE,
+                                 override.aes = list(alpha = 1, size = 1.5)),
+             size = guide_legend(ncol = 2,
+                                 drop = FALSE,
+                                 override.aes = list(alpha = 1))) +
       labs(title = NULL,
            x = NULL, y = NULL,
            fill = "Improve in CRPSS",
@@ -222,7 +267,7 @@ create_condition_plot <- function(flag.var,
             strip.background = element_rect(fill="#DDDDDD", colour="grey4"),
             strip.placement = "outside",
             strip.text.x = element_text(size = 7,family="sans", face='bold'),
-            
+
             axis.ticks.length = unit(0.1, "cm"),
             axis.ticks = element_line(linewidth = 0.2),
             axis.text = element_text(size = 7, family = "sans", face = "plain", color = "black"),
@@ -237,13 +282,41 @@ create_condition_plot <- function(flag.var,
             legend.spacing.x = unit(-1,"pt"),
             legend.box.spacing = unit(1, "pt"))
 
-    bar_data %>% summary() %>% print()
-    bar_plot <- ggplot(data = bar_data,
+    if(target_group==1) limits.y <-  c(0, 50) else if(target_group==3) limits.y <- c(0,80)
+    else if(target_group==2) limits.y <- c(0, 35)
+
+    ## bar ----
+    # Ensure all RPSS_cut levels (C1 to C4) are present, even if pct=0 for some
+    # Create complete data with all levels
+    all_cuts_complete <- rpss_levels
+    
+    #all_cuts_complete %>% print()
+    
+    bar_data_complete <- expand.grid(
+      RPSS_cut = all_cuts_complete,
+      stringsAsFactors = FALSE
+    ) %>%
+      left_join(bar_data, by = "RPSS_cut") %>%
+      mutate(pct = ifelse(is.na(pct), 0, pct)) %>%
+      mutate(RPSS_cut = factor(RPSS_cut, levels = rpss_levels))
+    
+    bar_data_complete %>% summary() %>% print()
+    
+    bar_plot <- ggplot(data = bar_data_complete,
                        aes(x = RPSS_cut, y = pct * 100, fill = RPSS_cut)) +
       geom_col(width = 0.6, color = NA) +
-      scale_fill_manual(values = col_pair[3:6], labels = labels_pct, guide = "none") +
-      scale_x_discrete(labels = paste0("C", 1:4)) +
-      scale_y_continuous(limits = c(0, 50),
+      scale_fill_manual(
+        values = stats::setNames(col_pair[3:6], rpss_levels),
+        labels = labels_pct,
+        guide = "none",
+        drop = FALSE,
+        limits = rpss_levels
+      ) +
+      scale_x_discrete(
+        labels = paste0("C", 1:4),
+        drop = FALSE
+      ) +
+      scale_y_continuous(limits = limits.y,
                          breaks = scales::pretty_breaks(n = 3),
                          expand = c(0, 0)) +
       labs(title = title_text,
@@ -318,6 +391,7 @@ figS_map %>% print()
 if(flag.save.supp){
   filen_s <- paste0("../figure/FigureS_CRPSS_ALL_", mode, "_", wf, "_", method_fevd, flag.v, 
                     "_AU_SSI_map_group", target_group, ".png")
+  
   png(filen_s, height=21.6, width=15, units="cm", bg = "white", res=600)
   figS_map %>% print()
   dev.off()
