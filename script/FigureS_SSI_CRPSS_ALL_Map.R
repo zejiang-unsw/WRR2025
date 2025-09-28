@@ -117,6 +117,8 @@ create_condition_plot <- function(flag.var,
   labels_pct <- c("C1: 0~5%", "C2: 5~10%", "C3: 10~20%", "C4: >20%")
   rpss_levels <- c("(0,0.05]", "(0.05,0.1]", "(0.1,0.2]", "(0.2,Inf]")
   tol_no <- 219
+  legend_override <- list(alpha = 1,shape = 21,
+                          stroke = 0.25)
 
   RPSS_dt_pct1 <- NULL
   map_sf_by_group <- vector("list", 3)
@@ -208,22 +210,16 @@ create_condition_plot <- function(flag.var,
     map_data <- target_map_sf %>% dplyr::filter(Lead == lead_level)
     bar_data <- target_pct %>% dplyr::filter(Lead == lead_level)
     map_data$RPSS_cut <- factor(map_data$RPSS_cut, levels = rpss_levels)
+    missing_cuts <- setdiff(rpss_levels, as.character(unique(map_data$RPSS_cut)))
 
     total_pct <- sum(bar_data$pct) * 100
     title_text <- sprintf("Total Percent: %.1f%%", total_pct)
 
     #map_data %>% summary() %>% print()
     ## map ----
-
-    # Ensure all RPSS_cut levels are present in map_data, even if missing
-    all_cuts_map <- factor(levels(target_map_sf$RPSS_cut), levels = levels(target_map_sf$RPSS_cut))
-    if (!all(all_cuts_map %in% levels(map_data$RPSS_cut))) {
-      map_data$RPSS_cut <- factor(map_data$RPSS_cut, levels = levels(target_map_sf$RPSS_cut))
-    }
-    missing_cuts <- setdiff(rpss_levels, as.character(unique(map_data$RPSS_cut)))
-
     map_plot <- ggplot(data = map_data) +
-      geom_sf(aes(fill = RPSS_cut, size = RPSS_cut), shape = 21, alpha = 0.8, stroke = 0.1) +
+      geom_sf(aes(fill = RPSS_cut, size = RPSS_cut), shape = 21, alpha = 0.8, stroke = 0.1, 
+              show.legend = TRUE) +
       geom_sf(data = world, aes(group = continent), color = "black", alpha = 0.2) +
       coord_sf(
         crs = sf::st_crs(3577),
@@ -250,10 +246,11 @@ create_condition_plot <- function(flag.var,
       ) +
       guides(fill = guide_legend(ncol = 2,
                                  drop = FALSE,
-                                 override.aes = list(alpha = 1, size = 1.5)),
+                                 #override.aes = legend_override
+                                 ),
              size = guide_legend(ncol = 2,
                                  drop = FALSE,
-                                 override.aes = list(alpha = 1))) +
+                                 override.aes = legend_override)) +
       labs(title = NULL,
            x = NULL, y = NULL,
            fill = "Improve in CRPSS",
@@ -282,6 +279,7 @@ create_condition_plot <- function(flag.var,
             legend.spacing.x = unit(-1,"pt"),
             legend.box.spacing = unit(1, "pt"))
 
+
     if(target_group==1) limits.y <-  c(0, 50) else if(target_group==3) limits.y <- c(0,80)
     else if(target_group==2) limits.y <- c(0, 35)
 
@@ -300,7 +298,7 @@ create_condition_plot <- function(flag.var,
       mutate(pct = ifelse(is.na(pct), 0, pct)) %>%
       mutate(RPSS_cut = factor(RPSS_cut, levels = rpss_levels))
     
-    bar_data_complete %>% summary() %>% print()
+    #bar_data_complete %>% summary() %>% print()
     
     bar_plot <- ggplot(data = bar_data_complete,
                        aes(x = RPSS_cut, y = pct * 100, fill = RPSS_cut)) +
